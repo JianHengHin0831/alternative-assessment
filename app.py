@@ -56,10 +56,11 @@ st.markdown("""
 def load_all():
     model = joblib.load('xgb_model.pkl')
     X_train = joblib.load('X_train.pkl')
-    X_test = joblib.load('X_test.pkl')
-    return model, X_train, X_test
+    scaler = joblib.load('scaler.pkl')
+    label_encoders = joblib.load('label_encoders.pkl')
+    return model, X_train, scaler, label_encoders
 
-model, X_train, X_test = load_all()
+model, X_train, scaler, label_encoders = load_all()
 
 # ==========================================
 # 2. ModelWrapper for DiCE
@@ -78,65 +79,35 @@ wrapped_model = ModelWrapper(model)
 # 3. Helper: Preprocess Input
 # ==========================================
 def preprocess_input(raw_dict):
-    """
-    Convert raw input (Age, Duration, Credit amount, etc.) to model features
-    Mirrors the assignment.ipynb feature engineering pipeline
-    """
     df_raw = pd.DataFrame([raw_dict])
     
-    # Mathematical Transformations
-    df_raw["Monthly pay"] = (df_raw["Credit amount"] / df_raw["Duration"])
-    df_raw["Credit amount_sq"] = df_raw["Credit amount"] ** 2
-    
-    # Age Binning
-    cat_age = pd.Series(dtype='object', index=df_raw.index)
-    cat_age[df_raw["Age"] < 25] = "0-25"
-    cat_age[((df_raw["Age"] >= 25) & (df_raw["Age"] < 30))] = "25-30"
-    cat_age[((df_raw["Age"] >= 30) & (df_raw["Age"] < 35))] = "30-35"
-    cat_age[((df_raw["Age"] >= 35) & (df_raw["Age"] < 40))] = "35-40"
-    cat_age[((df_raw["Age"] >= 40) & (df_raw["Age"] < 50))] = "40-50"
-    cat_age[((df_raw["Age"] >= 50) & (df_raw["Age"] < 76))] = "50-75"
-    df_raw["Age"] = cat_age
-    
-    # Duration Binning
-    def categorize_duration(i):
-        if i < 12: return "0-12"
-        elif (i >= 12) and (i < 24): return "12-24"
-        elif (i >= 24) and (i < 36): return "24-36"
-        elif (i >= 36) and (i < 48): return "36-48"
-        elif (i >= 48) and (i < 60): return "48-60"
-        elif (i >= 60) and (i <= 72): return "60-72"
-        return str(i)
-    df_raw["Duration"] = df_raw["Duration"].apply(categorize_duration)
-    
-    # Job Classification (convert numbers to text)
-    job_map = {0: "unskilled", 1: "resident", 2: "skilled", 3: "highly skilled"}
-    df_raw["Job"] = df_raw["Job"].replace(job_map)
-    
-    # One-Hot Encoding
-    target_col = "Risk"
-    exclude_cols = [target_col, "Credit amount", "Monthly pay", "Credit amount_sq"]
+    exclude_cols = ["Credit amount", "Age", "Duration"]
     categorical_cols = [c for c in df_raw.columns if c not in exclude_cols]
     
-    df_encoded = pd.get_dummies(df_raw, columns=categorical_cols, prefix=categorical_cols)
+    df_encoded = df_raw.copy()
+    for col in categorical_cols:
+        if col in label_encoders:
+            try:
+                df_encoded[col] = label_encoders[col].transform(df_raw[[col]])
+            except ValueError as e:
+                known_classes = label_encoders[col].classes_
+                unknown_val = df_raw[col].iloc[0]
+                
+                print(f"[Warning] Unknown value '{unknown_val}' for column '{col}'")
+                print(f"         Known classes: {list(known_classes)}")
+                print(f"         Using first known class: '{known_classes[0]}'")
+                
+                df_encoded[col] = label_encoders[col].transform([known_classes[0]])[0]
     
-    # Scaling using training ranges to match model preprocessing
-    scale_cols = ["Credit amount", "Monthly pay", "Credit amount_sq"]
-    for col in scale_cols:
-        if (col in X_train.columns) and (col in df_encoded.columns):
-            min_v = X_train[col].min()
-            max_v = X_train[col].max()
-            if max_v > min_v:
-                df_encoded[col] = (df_encoded[col] - min_v) / (max_v - min_v)
-            else:
-                df_encoded[col] = 0.0
+    scale_cols = ["Credit amount", "Age", "Duration"]
+    valid_scale_cols = [c for c in scale_cols if c in df_encoded.columns]
+    if valid_scale_cols:
+        df_encoded[valid_scale_cols] = scaler.transform(df_encoded[valid_scale_cols])
     
-    # Ensure all model columns are present
     for col in X_train.columns:
         if col not in df_encoded.columns:
             df_encoded[col] = 0
     
-    # Reorder columns to match model training
     df_encoded = df_encoded[X_train.columns]
     
     return df_encoded
@@ -151,6 +122,15 @@ st.sidebar.title("Applicant Information")
 st.sidebar.markdown("Enter applicant details below")
 st.sidebar.markdown("---")
 
+# Mapping UI options to training data values
+savings_mapping = {
+    "little": "little",
+    "moderate": "moderate",
+    "quite rich": "quite rich",
+    "rich": "rich",
+    "NA": "NA"
+}
+
 # Organize inputs in columns
 col1, col2 = st.sidebar.columns(2)
 
@@ -159,12 +139,12 @@ with col1:
     credit_amount = st.number_input("Credit Amount (EUR)", min_value=100, max_value=20000, value=3000, key="credit_amount")
     job = st.selectbox("Job Level", options=[0, 1, 2, 3], 
                        format_func=lambda x: ["Unskilled", "Resident", "Skilled", "Highly Skilled"][x], key="job")
-    savings = st.selectbox("Savings Account", 
-                          options=["<100 DM", "100-500 DM", "500-1000 DM", ">1000 DM", "NA"], key="savings")
+    savings = st.selectbox("Saving Accounts", 
+                          options=["little", "moderate", "quite rich", "rich", "NA"], key="savings")
 
 with col2:
     duration = st.number_input("Duration (months)", min_value=1, max_value=72, value=12, key="duration")
-    sex = st.selectbox("Sex", options=["male", "female"], key="sex")
+    sex = st.selectbox("Sex", options=["female", "male"], key="sex")
     housing = st.selectbox("Housing Type", options=["free", "own", "rent"], key="housing")
     status = st.selectbox("Checking Account", 
                          options=["little", "moderate", "rich", "NA"], key="status")
@@ -173,8 +153,9 @@ st.sidebar.markdown("---")
 
 # Purpose in full width
 purpose = st.sidebar.selectbox("Purpose", 
-                      options=["car", "furniture/equipment", "education", "appliances", "repairs", 
-                              "business", "vacation", "radio/TV", "training", "other"], key="purpose")
+                      options=["business", "car", "domestic appliances", "education", 
+                              "furniture/equipment", "radio/TV", "repairs", "vacation/others"], 
+                      key="purpose")
 
 # Build input dict
 raw_input = {
@@ -200,6 +181,11 @@ except Exception as e:
 # 5. Prediction
 # ==========================================
 st.markdown("---")
+
+# Show warning if any unknown values were encountered
+if hasattr(sample_processed, '_unknown_mappings') and sample_processed._unknown_mappings:
+    st.warning(f"Some input values were not found in training data and were mapped to defaults")
+
 col1, col2 = st.columns([1.2, 1.8])
 
 with col1:
@@ -236,7 +222,7 @@ with col2:
         shap.plots.waterfall(shap.Explanation(values=sv, base_values=bv,
                                               data=sample_processed.iloc[0],
                                               feature_names=sample_processed.columns))
-        st.pyplot(fig, use_container_width=True)
+        st.pyplot(fig, width='stretch')
     except Exception as e:
         st.warning(f"SHAP calculation failed: {e}")
 
@@ -245,81 +231,132 @@ with col2:
 # ==========================================
 st.markdown("---")
 st.subheader("Counterfactual Recommendations")
+st.markdown("""
+The system analyzes how minimal changes to financial features could alter the risk assessment from **High Risk** to **Low Risk**.
+""")
 
 if pred == 0:
-    st.info("Assessment: This applicant is already classified as low risk. No changes recommended.")
+    st.info("Assessment: This applicant is already classified as Low Risk. No changes are required.")
 else:
-    with st.spinner("Analyzing improvement scenarios..."):
+    with st.spinner("Generating actionable recommendations (DiCE)..."):
         try:
-            # Only vary continuous features and simple categorical features
-            # Avoid one-hot encoded categorical features
-            features_to_vary = ['Credit amount', 'Monthly pay', 'Credit amount_sq']
+            immutable_features = ['Age', 'Sex']
+            immutable_features = [col for col in immutable_features if col in X_train.columns]
             
-            # Use X_train to build DiCE data
-            X_train_with_target = X_train.copy()
-            X_train_with_target['Risk'] = 0
-
-            # Ensure binary one-hot columns include both 0 and 1 in the DiCE data
-            binary_cols = [c for c in X_train_with_target.columns if set(X_train_with_target[c].dropna().unique()).issubset({0,1})]
-            synth_rows = []
-            median_vals = X_train_with_target.median(numeric_only=True)
-            for col in binary_cols:
-                if X_train_with_target[col].nunique() == 1:
-                    # create a synthetic row with this binary col = 1 and other numeric columns = median
-                    synth = median_vals.to_dict()
-                    # set all binary cols to 0
-                    for b in binary_cols:
-                        synth[b] = 0
-                    synth[col] = 1
-                    synth_rows.append(synth)
-            if synth_rows:
-                X_train_with_target = pd.concat([X_train_with_target, pd.DataFrame(synth_rows)], ignore_index=True)
-
-            continuous_features = features_to_vary
+            all_features = [col for col in X_train.columns if col != 'Risk']
+            features_to_vary = [col for col in all_features if col not in immutable_features]
+            
+            continuous_features = ['Credit amount']
             continuous_features = [c for c in continuous_features if c in X_train.columns]
 
-            d = dice_ml.Data(dataframe=X_train_with_target,
-                            continuous_features=continuous_features,
-                            outcome_name='Risk')
+            X_train_dice = X_train.copy()
+            X_train_dice['Risk'] = model.predict(X_train)
+
+            d = dice_ml.Data(dataframe=X_train_dice,
+                             continuous_features=continuous_features,
+                             outcome_name='Risk')
+
             m = dice_ml.Model(model=wrapped_model, backend="sklearn")
             exp = dice_ml.Dice(d, m, method="random")
-            
-            # Generate counterfactuals with limited features to vary
-            dice_result = exp.generate_counterfactuals(sample_processed, total_CFs=1,
-                                                       desired_class="opposite",
-                                                       features_to_vary=features_to_vary)
-            
-            # Display results
+            dice_result = exp.generate_counterfactuals(
+                sample_processed, 
+                total_CFs=1, 
+                desired_class="opposite",
+                features_to_vary=features_to_vary
+            )
+
             cf_df = dice_result.cf_examples_list[0].final_cfs_df.copy()
-            
-            # Find changed features
             original_vals = sample_processed.iloc[0]
-            changed_features = {}
-            for col in features_to_vary:
-                if col in X_train.columns:
-                    orig = original_vals[col]
-                    cf_val = cf_df.iloc[0][col]
-                    if abs(orig - cf_val) > 0.001:
-                        changed_features[col] = {
-                            'Current': round(orig, 2), 
-                            'Recommended': round(cf_val, 2),
-                            'Change': round(cf_val - orig, 2)
-                        }
             
-            if changed_features:
-                st.write("**Suggested changes to improve credit assessment:**")
-                rec_df = pd.DataFrame(changed_features).T
-                st.dataframe(rec_df, use_container_width=True)
+            changes_found = False
+            results_data = []
+            
+            try:
+                scaled_features = list(scaler.get_feature_names_out()) if hasattr(scaler, 'get_feature_names_out') else ["Credit amount", "Age", "Duration"]
+            except:
+                scaled_features = ["Credit amount", "Age", "Duration"]
+
+            for col in features_to_vary:
+                if col in original_vals.index:
+                    orig_val = original_vals[col]
+                    new_val = cf_df.iloc[0][col]
+                    
+                    if isinstance(orig_val, (bool, np.bool_)) or isinstance(new_val, (bool, np.bool_)):
+                        changed = bool(orig_val) ^ bool(new_val)
+                        if changed:
+                            changes_found = True
+                            results_data.append({
+                                "Feature": col,
+                                "Current": bool(orig_val),
+                                "Recommended": bool(new_val),
+                                "Change": "Toggle"
+                            })
+                    else:
+                        diff = new_val - orig_val
+                        if abs(diff) > 0.0001:
+                            changes_found = True
+                            direction = "Decrease" if diff < 0 else "Increase"
+                            
+                            if col in scaled_features:
+                                dummy_scaled = np.zeros((1, len(scaled_features)))
+                                col_idx = scaled_features.index(col)
+                                
+                                dummy_scaled[0, col_idx] = orig_val
+                                orig_unscaled = scaler.inverse_transform(dummy_scaled)[0, col_idx]
+                                
+                                dummy_scaled[0, col_idx] = new_val
+                                new_unscaled = scaler.inverse_transform(dummy_scaled)[0, col_idx]
+                                
+                                results_data.append({
+                                    "Feature": col,
+                                    "Current": f"{orig_unscaled:.2f}",
+                                    "Recommended": f"{new_unscaled:.2f}",
+                                    "Suggestion": direction
+                                })
+                            else:
+                                if col in label_encoders:
+                                    try:
+                                        orig_class_idx = int(round(orig_val))
+                                        new_class_idx = int(round(new_val))
+                                        
+                                        orig_class_name = label_encoders[col].inverse_transform([orig_class_idx])[0]
+                                        new_class_name = label_encoders[col].inverse_transform([new_class_idx])[0]
+                                        
+                                        results_data.append({
+                                            "Feature": col,
+                                            "Current": orig_class_name,
+                                            "Recommended": new_class_name,
+                                            "Suggestion": "Change"
+                                        })
+                                    except:
+                                        results_data.append({
+                                            "Feature": col,
+                                            "Current": f"{orig_val:.4f}",
+                                            "Recommended": f"{new_val:.4f}",
+                                            "Change": f"{direction} {abs(diff):.4f}"
+                                        })
+                                else:
+                                    results_data.append({
+                                        "Feature": col,
+                                        "Current": f"{orig_val:.4f}",
+                                        "Recommended": f"{new_val:.4f}",
+                                        "Change": f"{direction} {abs(diff):.4f}"
+                                    })
+
+            if changes_found:
+                st.success("Recommendations to Improve Credit Assessment")
+                st.dataframe(pd.DataFrame(results_data), width='stretch')
                 st.markdown("""
-                **Interpretation:**
-                - **Current**: Your current feature value
-                - **Recommended**: Suggested value for better assessment
-                - **Change**: The difference you need to achieve
+                **Explanation:**
+                - **Current**: Your current value
+                - **Recommended**: Suggested value
+                - **Suggestion**: Direction of adjustment (Increase or Decrease)
+                - **Age and Sex**: Remain unchanged (immutable features)
+                - **Other Features**: Can be adjusted according to recommendations to improve credit score
                 """)
             else:
-                st.info("No adjustments needed for key features.")
-                
+                st.info("No adjustments found to improve the assessment with current constraints.")
+
         except Exception as e:
-            st.warning(f"Recommendation generation failed: {e}")
-
-
+            st.error("Could not generate counterfactuals.")
+            st.warning(f"Technical Detail: {str(e)}")
