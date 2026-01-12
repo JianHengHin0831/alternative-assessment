@@ -81,6 +81,9 @@ wrapped_model = ModelWrapper(model)
 def preprocess_input(raw_dict):
     df_raw = pd.DataFrame([raw_dict])
     
+    # Map 'NA' string values to np.nan for proper encoding
+    df_raw = df_raw.replace('NA', np.nan)
+    
     exclude_cols = ["Credit amount", "Age", "Duration"]
     categorical_cols = [c for c in df_raw.columns if c not in exclude_cols]
     
@@ -135,7 +138,7 @@ savings_mapping = {
 col1, col2 = st.sidebar.columns(2)
 
 with col1:
-    age = st.number_input("Age", min_value=18, max_value=100, value=35, key="age")
+    age = st.number_input("Age", min_value=19, max_value=75, value=35, key="age")
     credit_amount = st.number_input("Credit Amount (EUR)", min_value=100, max_value=20000, value=3000, key="credit_amount")
     job = st.selectbox("Job Level", options=[0, 1, 2, 3], 
                        format_func=lambda x: ["Unskilled", "Resident", "Skilled", "Highly Skilled"][x], key="job")
@@ -143,7 +146,7 @@ with col1:
                           options=["little", "moderate", "quite rich", "rich", "NA"], key="savings")
 
 with col2:
-    duration = st.number_input("Duration (months)", min_value=1, max_value=72, value=12, key="duration")
+    duration = st.number_input("Duration (months)", min_value=6, max_value=48, value=12, key="duration")
     sex = st.selectbox("Sex", options=["female", "male"], key="sex")
     housing = st.selectbox("Housing Type", options=["free", "own", "rent"], key="housing")
     status = st.selectbox("Checking Account", 
@@ -271,77 +274,88 @@ else:
             changes_found = False
             results_data = []
             
-            try:
-                scaled_features = list(scaler.get_feature_names_out()) if hasattr(scaler, 'get_feature_names_out') else ["Credit amount", "Age", "Duration"]
-            except:
-                scaled_features = ["Credit amount", "Age", "Duration"]
+            # Define continuous scaled features
+            continuous_scale_features = ["Credit amount", "Age", "Duration"]
 
             for col in features_to_vary:
                 if col in original_vals.index:
                     orig_val = original_vals[col]
                     new_val = cf_df.iloc[0][col]
                     
-                    if isinstance(orig_val, (bool, np.bool_)) or isinstance(new_val, (bool, np.bool_)):
-                        changed = bool(orig_val) ^ bool(new_val)
-                        if changed:
-                            changes_found = True
+                    # Skip if values are essentially the same
+                    if abs(float(orig_val) - float(new_val)) < 0.0001:
+                        continue
+                    
+                    changes_found = True
+                    
+                    # Handle continuous scaled features (need inverse scaling)
+                    if col in continuous_scale_features:
+                        try:
+                            dummy_scaled = np.zeros((1, len(continuous_scale_features)))
+                            col_idx = continuous_scale_features.index(col)
+                            
+                            dummy_scaled[0, col_idx] = orig_val
+                            orig_unscaled = scaler.inverse_transform(dummy_scaled)[0, col_idx]
+                            
+                            dummy_scaled[0, col_idx] = new_val
+                            new_unscaled = scaler.inverse_transform(dummy_scaled)[0, col_idx]
+                            
+                            direction = "Decrease" if new_unscaled < orig_unscaled else "Increase"
                             results_data.append({
                                 "Feature": col,
-                                "Current": bool(orig_val),
-                                "Recommended": bool(new_val),
-                                "Change": "Toggle"
+                                "Current": f"{orig_unscaled:.2f}",
+                                "Recommended": f"{new_unscaled:.2f}",
+                                "Suggestion": direction
                             })
-                    else:
-                        diff = new_val - orig_val
-                        if abs(diff) > 0.0001:
-                            changes_found = True
-                            direction = "Decrease" if diff < 0 else "Increase"
+                        except Exception as e:
+                            results_data.append({
+                                "Feature": col,
+                                "Current": f"{orig_val:.4f}",
+                                "Recommended": f"{new_val:.4f}",
+                                "Suggestion": "Change"
+                            })
+                    
+                    # Handle categorical encoded features (decode back to original class names)
+                    elif col in label_encoders:
+                        try:
+                            orig_class_idx = int(round(float(orig_val)))
+                            new_class_idx = int(round(float(new_val)))
                             
-                            if col in scaled_features:
-                                dummy_scaled = np.zeros((1, len(scaled_features)))
-                                col_idx = scaled_features.index(col)
-                                
-                                dummy_scaled[0, col_idx] = orig_val
-                                orig_unscaled = scaler.inverse_transform(dummy_scaled)[0, col_idx]
-                                
-                                dummy_scaled[0, col_idx] = new_val
-                                new_unscaled = scaler.inverse_transform(dummy_scaled)[0, col_idx]
-                                
-                                results_data.append({
-                                    "Feature": col,
-                                    "Current": f"{orig_unscaled:.2f}",
-                                    "Recommended": f"{new_unscaled:.2f}",
-                                    "Suggestion": direction
-                                })
-                            else:
-                                if col in label_encoders:
-                                    try:
-                                        orig_class_idx = int(round(orig_val))
-                                        new_class_idx = int(round(new_val))
-                                        
-                                        orig_class_name = label_encoders[col].inverse_transform([orig_class_idx])[0]
-                                        new_class_name = label_encoders[col].inverse_transform([new_class_idx])[0]
-                                        
-                                        results_data.append({
-                                            "Feature": col,
-                                            "Current": orig_class_name,
-                                            "Recommended": new_class_name,
-                                            "Suggestion": "Change"
-                                        })
-                                    except:
-                                        results_data.append({
-                                            "Feature": col,
-                                            "Current": f"{orig_val:.4f}",
-                                            "Recommended": f"{new_val:.4f}",
-                                            "Change": f"{direction} {abs(diff):.4f}"
-                                        })
-                                else:
-                                    results_data.append({
-                                        "Feature": col,
-                                        "Current": f"{orig_val:.4f}",
-                                        "Recommended": f"{new_val:.4f}",
-                                        "Change": f"{direction} {abs(diff):.4f}"
-                                    })
+                            orig_class_name = label_encoders[col].inverse_transform([orig_class_idx])[0]
+                            new_class_name = label_encoders[col].inverse_transform([new_class_idx])[0]
+                            
+                            results_data.append({
+                                "Feature": col,
+                                "Current": str(orig_class_name),
+                                "Recommended": str(new_class_name),
+                                "Suggestion": "Change"
+                            })
+                        except Exception as decode_err:
+                            results_data.append({
+                                "Feature": col,
+                                "Current": f"{orig_val:.4f}",
+                                "Recommended": f"{new_val:.4f}",
+                                "Suggestion": "Change"
+                            })
+                    
+                    # Handle other numeric features
+                    else:
+                        try:
+                            diff = float(new_val) - float(orig_val)
+                            direction = "Decrease" if diff < 0 else "Increase"
+                            results_data.append({
+                                "Feature": col,
+                                "Current": f"{float(orig_val):.4f}",
+                                "Recommended": f"{float(new_val):.4f}",
+                                "Suggestion": direction
+                            })
+                        except:
+                            results_data.append({
+                                "Feature": col,
+                                "Current": str(orig_val),
+                                "Recommended": str(new_val),
+                                "Suggestion": "Change"
+                            })
 
             if changes_found:
                 st.success("Recommendations to Improve Credit Assessment")
