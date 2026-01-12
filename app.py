@@ -249,7 +249,7 @@ else:
             all_features = [col for col in X_train.columns if col != 'Risk']
             features_to_vary = [col for col in all_features if col not in immutable_features]
             
-            continuous_features = ['Credit amount']
+            continuous_features = ['Credit amount', 'Duration','Age']
             continuous_features = [c for c in continuous_features if c in X_train.columns]
 
             X_train_dice = X_train.copy()
