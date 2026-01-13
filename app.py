@@ -359,6 +359,20 @@ else:
 
             if changes_found:
                 st.success("Recommendations to Improve Credit Assessment")
+                
+                # Generate explanation sentence
+                change_parts = []
+                for item in results_data:
+                    change_parts.append(f"**{item['Feature']}** from *{item['Current']}* to *{item['Recommended']}*")
+                
+                if len(change_parts) == 1:
+                    explanation = f"If you change {change_parts[0]}, then the assessment will change to **Low Risk**."
+                elif len(change_parts) == 2:
+                    explanation = f"If you change {change_parts[0]} and {change_parts[1]}, then the assessment will change to **Low Risk**."
+                else:
+                    explanation = f"If you change {', '.join(change_parts[:-1])}, and {change_parts[-1]}, then the assessment will change to **Low Risk**."
+                
+                st.info(explanation)
                 st.dataframe(pd.DataFrame(results_data), width='stretch')
                 st.markdown("""
                 **Explanation:**
