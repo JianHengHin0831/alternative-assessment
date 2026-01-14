@@ -131,7 +131,22 @@ savings_mapping = {
     "moderate": "moderate",
     "quite rich": "quite rich",
     "rich": "rich",
-    "NA": "NA"
+    "rather not to say / no account": "NA"
+}
+
+checking_mapping = {
+    "little": "little",
+    "moderate": "moderate",
+    "rich": "rich",
+    "rather not to say / no account": "NA"
+}
+
+# Job level mapping
+job_mapping = {
+    0: "Unskilled",
+    1: "Resident",
+    2: "Skilled",
+    3: "Highly Skilled"
 }
 
 # Organize inputs in columns
@@ -143,14 +158,14 @@ with col1:
     job = st.selectbox("Job Level", options=[0, 1, 2, 3], 
                        format_func=lambda x: ["Unskilled", "Resident", "Skilled", "Highly Skilled"][x], key="job")
     savings = st.selectbox("Saving Accounts", 
-                          options=["little", "moderate", "quite rich", "rich", "NA"], key="savings")
+                          options=["little", "moderate", "quite rich", "rich", "rather not to say / no account"], key="savings")
 
 with col2:
     duration = st.number_input("Duration (months)", min_value=6, max_value=48, value=12, key="duration")
     sex = st.selectbox("Sex", options=["female", "male"], key="sex")
     housing = st.selectbox("Housing Type", options=["free", "own", "rent"], key="housing")
     status = st.selectbox("Checking Account", 
-                         options=["little", "moderate", "rich", "NA"], key="status")
+                         options=["little", "moderate", "rich", "rather not to say / no account"], key="status")
 
 st.sidebar.markdown("---")
 
@@ -168,8 +183,8 @@ raw_input = {
     'Job': job,
     'Sex': sex,
     'Housing': housing,
-    'Saving accounts': savings,
-    'Checking account': status,
+    'Saving accounts': savings_mapping.get(savings, savings),
+    'Checking account': checking_mapping.get(status, status),
     'Purpose': purpose
 }
 
@@ -321,8 +336,19 @@ else:
                             orig_class_idx = int(round(float(orig_val)))
                             new_class_idx = int(round(float(new_val)))
                             
-                            orig_class_name = label_encoders[col].inverse_transform([orig_class_idx])[0]
-                            new_class_name = label_encoders[col].inverse_transform([new_class_idx])[0]
+                            # Special handling for Job column
+                            if col == "Job":
+                                orig_class_name = job_mapping.get(orig_class_idx, str(orig_class_idx))
+                                new_class_name = job_mapping.get(new_class_idx, str(new_class_idx))
+                            else:
+                                orig_class_name = label_encoders[col].inverse_transform([orig_class_idx])[0]
+                                new_class_name = label_encoders[col].inverse_transform([new_class_idx])[0]
+                            
+                            # Replace 'nan' with user-friendly label
+                            if str(orig_class_name) == 'nan':
+                                orig_class_name = 'rather not to say / no account'
+                            if str(new_class_name) == 'nan':
+                                new_class_name = 'rather not to say / no account'
                             
                             results_data.append({
                                 "Feature": col,
@@ -341,14 +367,29 @@ else:
                     # Handle other numeric features
                     else:
                         try:
-                            diff = float(new_val) - float(orig_val)
-                            direction = "Decrease" if diff < 0 else "Increase"
-                            results_data.append({
-                                "Feature": col,
-                                "Current": f"{float(orig_val):.4f}",
-                                "Recommended": f"{float(new_val):.4f}",
-                                "Suggestion": direction
-                            })
+                            # Special handling for Job column
+                            if col == "Job":
+                                orig_class_idx = int(round(float(orig_val)))
+                                new_class_idx = int(round(float(new_val)))
+                                
+                                orig_class_name = job_mapping.get(orig_class_idx, str(orig_class_idx))
+                                new_class_name = job_mapping.get(new_class_idx, str(new_class_idx))
+                                
+                                results_data.append({
+                                    "Feature": col,
+                                    "Current": str(orig_class_name),
+                                    "Recommended": str(new_class_name),
+                                    "Suggestion": "Change"
+                                })
+                            else:
+                                diff = float(new_val) - float(orig_val)
+                                direction = "Decrease" if diff < 0 else "Increase"
+                                results_data.append({
+                                    "Feature": col,
+                                    "Current": f"{float(orig_val):.4f}",
+                                    "Recommended": f"{float(new_val):.4f}",
+                                    "Suggestion": direction
+                                })
                         except:
                             results_data.append({
                                 "Feature": col,
