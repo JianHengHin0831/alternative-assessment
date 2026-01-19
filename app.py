@@ -44,6 +44,46 @@ st.markdown("""
     /* Button styling */
     button { background-color: #1f77b4 !important; color: white !important; }
     
+    /* Tab styling */
+    [data-testid="stTabs"] {
+        background-color: transparent;
+    }
+    
+    [role="tablist"] {
+        background-color: #f0f2f6;
+        border-radius: 8px;
+        padding: 4px;
+        margin-bottom: 1.5rem;
+    }
+    
+    [role="tab"] {
+        padding: 0.75rem 1.5rem !important;
+        border-radius: 6px;
+        font-weight: 500;
+        color: #2c3e50 !important;
+        background-color: transparent !important;
+        border: none !important;
+        transition: all 0.3s ease;
+        margin-right: 4px;
+    }
+    
+    [role="tab"]:hover {
+        background-color: rgba(31, 119, 180, 0.1) !important;
+    }
+    
+    [role="tab"][aria-selected="true"] {
+        background-color: #1f77b4 !important;
+        color: white !important;
+        box-shadow: 0 2px 8px rgba(31, 119, 180, 0.3);
+    }
+    
+    /* Tab content styling */
+    [data-testid="stTabContent"] {
+        padding: 2rem 1rem;
+        border-radius: 8px;
+        background-color: #ffffff;
+    }
+    
     /* Divider */
     hr { border-color: #e0e0e0; margin: 2rem 0; }
 </style>
@@ -204,7 +244,7 @@ st.markdown("---")
 if hasattr(sample_processed, '_unknown_mappings') and sample_processed._unknown_mappings:
     st.warning(f"Some input values were not found in training data and were mapped to defaults")
 
-col1, col2 = st.columns([1.2, 1.8])
+col1, col2, col3 = st.columns([1.2, 1.2, 1.3])
 
 with col1:
     st.subheader("Prediction Result")
@@ -218,11 +258,145 @@ with col1:
     
     st.metric("Default Probability", f"{prob:.1%}")
 
-# ==========================================
-# 6. SHAP Local Explanation
-# ==========================================
 with col2:
-    st.subheader("Feature Impact Analysis (SHAP)")
+    pass
+
+with col3:
+    st.subheader("Risk Gauge")
+
+    fig, ax = plt.subplots(figsize=(6, 4), subplot_kw=dict(projection='polar'))
+
+    # Risk score (0–1)
+    risk_score = prob
+
+    ax.set_thetamin(0)
+    ax.set_thetamax(180)
+
+    theta = np.linspace(np.pi, 0, 200)
+
+    # Risk zones
+    low_risk_theta = theta[theta >= np.pi / 2]
+    high_risk_theta = theta[theta < np.pi / 2]
+
+    ax.fill_between(low_risk_theta, 0, 1, color="#28a745", alpha=0.3)
+    ax.fill_between(high_risk_theta, 0, 1, color="#dc3545", alpha=0.3)
+
+    needle_theta = np.pi * (1 - risk_score)
+    ax.plot([needle_theta, needle_theta], [0, 1], color="#1f77b4", linewidth=3)
+    ax.plot(needle_theta, 1, "o", color="#1f77b4", markersize=10)
+
+    ax.set_ylim(0, 1.1)
+    ax.set_theta_zero_location("E")  
+    ax.set_theta_direction(1)        
+    ax.set_xticks([np.pi, np.pi/2, 0])
+    ax.set_xticklabels(["0%", "50%", "100%"])
+    ax.set_yticks([])
+    ax.grid(False)
+
+    plt.tight_layout()
+    st.pyplot(fig, width="stretch")
+
+    # =========================
+    # 4. Risk Label
+    # =========================
+    if risk_score < 0.5:
+        st.markdown(
+            "<div style='text-align:center; font-weight:bold; color:#28a745;'>🟢 Low Risk</div>",
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown(
+            "<div style='text-align:center; font-weight:bold; color:#dc3545;'>🔴 High Risk</div>",
+            unsafe_allow_html=True
+        )
+
+
+# ==========================================
+# 7. Multi-Perspective Model Explanations
+# ==========================================
+st.markdown("---")
+st.subheader("Model Explanations")
+st.markdown("Choose an explanation perspective suited to your role")
+
+# Create tabs for different explanation methods
+tab1, tab2, tab3 = st.tabs(["Global Explanation (Auditor)", "Local Explanation (Loan Officer)", "Counterfactual Recommendations (Applicant)"])
+
+# ==========================================
+# TAB 1: Global Explanation
+# ==========================================
+with tab1:
+    st.markdown("### Global Model Behavior Analysis")
+    st.markdown("""
+    This section provides an overview of how the model makes decisions across all applicants in the dataset.
+    """)
+    
+    # Display SHAP summary images if available
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### SHAP Summary Plot")
+        try:
+            from PIL import Image
+            img_summary = Image.open('shap-summary.png')
+            st.image(img_summary, width='stretch')
+        except:
+            st.info("SHAP summary visualization not available. Please ensure 'shap-summary.png' exists in the application directory.")
+    
+    with col2:
+        st.markdown("#### SHAP Dependence Heatmap")
+        try:
+            from PIL import Image
+            img_heatmap = Image.open('shap-heatmap.png')
+            st.image(img_heatmap, width='stretch')
+        except:
+            st.info("SHAP heatmap visualization not available. Please ensure 'shap-heatmap.png' exists in the application directory.")
+    
+    # Display SHAP summary images if available
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### SHAP Bar Plot")
+        try:
+            from PIL import Image
+            img_summary = Image.open('shap-bar-plot.png')
+            st.image(img_summary, width='stretch')
+        except:
+            st.info("SHAP summary visualization not available. Please ensure 'shap-summary.png' exists in the application directory.")
+    
+    with col2:
+        st.markdown("#### SHAP Dependence Plot")
+        try:
+            from PIL import Image
+            img_heatmap = Image.open('shap-dependence.png')
+            st.image(img_heatmap, width='stretch')
+        except:
+            st.info("SHAP heatmap visualization not available. Please ensure 'shap-heatmap.png' exists in the application directory.")
+    
+
+    st.markdown("---")
+    st.markdown("### Key Insights")
+    
+    insights = {
+        "Key Drivers": "Checking account, Duration, and Credit amount dominate the model's decisions, reflecting liquidity and loan burden.",
+        "Economic Logic": "Lower checking account balances push predictions toward High Risk, consistent with credit risk theory.",
+        "Fairness Risk": "Demographic features (Age, Sex) have non-negligible impact and require fairness review for regulatory compliance.",
+        "Stability Concern": "Sharp importance drop after top features suggests over-reliance on Checking account, risking robustness if data is missing."
+    }
+    
+    for title, insight in insights.items():
+        st.markdown(f"**{title}**")
+        st.markdown(f"> {insight}")
+        st.markdown("")
+
+# ==========================================
+# TAB 2: SHAP Local Explanation
+# ==========================================
+with tab2:
+    st.markdown("### Feature Impact on This Application")
+    st.markdown("""
+    This waterfall plot shows how each feature pushes the prediction up or down for this specific applicant.
+    """)
+    
     try:
         explainer = shap.TreeExplainer(model)
         bv = explainer.expected_value
@@ -235,145 +409,158 @@ with col2:
         else:
             sv = sv[0]
         
-        fig, ax = plt.subplots(figsize=(8, 5))
+        fig, ax = plt.subplots(figsize=(10, 6))
+
         plt.tight_layout()
         shap.plots.waterfall(shap.Explanation(values=sv, base_values=bv,
                                               data=sample_processed.iloc[0],
                                               feature_names=sample_processed.columns))
         st.pyplot(fig, width='stretch')
+        
+        # Generate simple explanation
+        st.markdown("---")
+        st.markdown("### Simple Explanation")
+        
+        positive_features = []
+        negative_features = []
+        
+        for i, feature_name in enumerate(sample_processed.columns):
+            if sv[i] > 0.01:  # Small threshold to avoid noise
+                positive_features.append(feature_name)
+            elif sv[i] < -0.01:
+                negative_features.append(feature_name)
+        
+        # Build explanation text
+        if positive_features and negative_features:
+            pos_str = ", ".join(positive_features)
+            neg_str = ", ".join(negative_features)
+            explanation = f"**{pos_str}** are pushing toward **High Risk**, while **{neg_str}** are pushing toward **Low Risk**."
+        elif positive_features:
+            pos_str = ", ".join(positive_features)
+            explanation = f"**{pos_str}** are pushing toward **High Risk**."
+        elif negative_features:
+            neg_str = ", ".join(negative_features)
+            explanation = f"**{neg_str}** are pushing toward **Low Risk**."
+        else:
+            explanation = "No significant feature impacts detected."
+        
+        st.markdown(explanation)
+        
+        st.markdown("""
+        **How to read this plot:**
+        - **Base value**: Starting prediction (average across all applicants)
+        - **Red arrows**: Features pushing toward High Risk
+        - **Blue arrows**: Features pushing toward Low Risk
+        - **Final prediction**: Result at the top after all features are considered
+        """)
     except Exception as e:
         st.warning(f"SHAP calculation failed: {e}")
 
 # ==========================================
-# 7. DiCE Counterfactual Explanations
+# TAB 3: DiCE Counterfactual Explanations
 # ==========================================
-st.markdown("---")
-st.subheader("Counterfactual Recommendations")
-st.markdown("""
-The system analyzes how minimal changes to financial features could alter the risk assessment from **High Risk** to **Low Risk**.
-""")
+with tab3:
+    st.markdown("### Actionable Recommendations to Improve Assessment")
+    st.markdown("""
+    The system analyzes how minimal changes to financial features could alter the risk assessment from **High Risk** to **Low Risk**.
+    """)
 
-if pred == 0:
-    st.info("Assessment: This applicant is already classified as Low Risk. No changes are required.")
-else:
-    with st.spinner("Generating actionable recommendations (DiCE)..."):
-        try:
-            immutable_features = ['Age', 'Sex']
-            immutable_features = [col for col in immutable_features if col in X_train.columns]
+    if pred == 0:
+        st.info("Assessment: This applicant is already classified as Low Risk. No changes are required.")
+    else:
+        with st.spinner("Generating actionable recommendations (DiCE)..."):
+            try:
+                immutable_features = ['Age', 'Sex']
+                immutable_features = [col for col in immutable_features if col in X_train.columns]
+                
+                all_features = [col for col in X_train.columns if col != 'Risk']
+                features_to_vary = [col for col in all_features if col not in immutable_features]
             
-            all_features = [col for col in X_train.columns if col != 'Risk']
-            features_to_vary = [col for col in all_features if col not in immutable_features]
-            
-            continuous_features = ['Credit amount', 'Duration','Age']
-            continuous_features = [c for c in continuous_features if c in X_train.columns]
+                continuous_features = ['Credit amount', 'Duration','Age']
+                continuous_features = [c for c in continuous_features if c in X_train.columns]
 
-            X_train_dice = X_train.copy()
-            X_train_dice['Risk'] = model.predict(X_train)
+                X_train_dice = X_train.copy()
+                X_train_dice['Risk'] = model.predict(X_train)
 
-            d = dice_ml.Data(dataframe=X_train_dice,
-                             continuous_features=continuous_features,
-                             outcome_name='Risk')
+                d = dice_ml.Data(dataframe=X_train_dice,
+                                continuous_features=continuous_features,
+                                outcome_name='Risk')
 
-            m = dice_ml.Model(model=wrapped_model, backend="sklearn")
-            exp = dice_ml.Dice(d, m, method="random")
-            dice_result = exp.generate_counterfactuals(
-                sample_processed, 
-                total_CFs=1, 
-                desired_class="opposite",
-                features_to_vary=features_to_vary
-            )
+                m = dice_ml.Model(model=wrapped_model, backend="sklearn")
+                exp = dice_ml.Dice(d, m, method="random")
+                dice_result = exp.generate_counterfactuals(
+                    sample_processed, 
+                    total_CFs=1, 
+                    desired_class="opposite",
+                    features_to_vary=features_to_vary
+                )
 
-            cf_df = dice_result.cf_examples_list[0].final_cfs_df.copy()
-            original_vals = sample_processed.iloc[0]
-            
-            changes_found = False
-            results_data = []
-            
-            # Define continuous scaled features
-            continuous_scale_features = ["Credit amount", "Age", "Duration"]
+                cf_df = dice_result.cf_examples_list[0].final_cfs_df.copy()
+                original_vals = sample_processed.iloc[0]
+                
+                changes_found = False
+                results_data = []
+                
+                # Define continuous scaled features
+                continuous_scale_features = ["Credit amount", "Age", "Duration"]
 
-            for col in features_to_vary:
-                if col in original_vals.index:
-                    orig_val = original_vals[col]
-                    new_val = cf_df.iloc[0][col]
-                    
-                    # Skip if values are essentially the same
-                    if abs(float(orig_val) - float(new_val)) < 0.0001:
-                        continue
-                    
-                    changes_found = True
-                    
-                    # Handle continuous scaled features (need inverse scaling)
-                    if col in continuous_scale_features:
-                        try:
-                            dummy_scaled = np.zeros((1, len(continuous_scale_features)))
-                            col_idx = continuous_scale_features.index(col)
-                            
-                            dummy_scaled[0, col_idx] = orig_val
-                            orig_unscaled = scaler.inverse_transform(dummy_scaled)[0, col_idx]
-                            
-                            dummy_scaled[0, col_idx] = new_val
-                            new_unscaled = scaler.inverse_transform(dummy_scaled)[0, col_idx]
-                            
-                            direction = "Decrease" if new_unscaled < orig_unscaled else "Increase"
-                            results_data.append({
-                                "Feature": col,
-                                "Current": f"{orig_unscaled:.2f}",
-                                "Recommended": f"{new_unscaled:.2f}",
-                                "Suggestion": direction
-                            })
-                        except Exception as e:
-                            results_data.append({
-                                "Feature": col,
-                                "Current": f"{orig_val:.4f}",
-                                "Recommended": f"{new_val:.4f}",
-                                "Suggestion": "Change"
-                            })
-                    
-                    # Handle categorical encoded features (decode back to original class names)
-                    elif col in label_encoders:
-                        try:
-                            orig_class_idx = int(round(float(orig_val)))
-                            new_class_idx = int(round(float(new_val)))
-                            
-                            # Special handling for Job column
-                            if col == "Job":
-                                orig_class_name = job_mapping.get(orig_class_idx, str(orig_class_idx))
-                                new_class_name = job_mapping.get(new_class_idx, str(new_class_idx))
-                            else:
-                                orig_class_name = label_encoders[col].inverse_transform([orig_class_idx])[0]
-                                new_class_name = label_encoders[col].inverse_transform([new_class_idx])[0]
-                            
-                            # Replace 'nan' with user-friendly label
-                            if str(orig_class_name) == 'nan':
-                                orig_class_name = 'rather not to say / no account'
-                            if str(new_class_name) == 'nan':
-                                new_class_name = 'rather not to say / no account'
-                            
-                            results_data.append({
-                                "Feature": col,
-                                "Current": str(orig_class_name),
-                                "Recommended": str(new_class_name),
-                                "Suggestion": "Change"
-                            })
-                        except Exception as decode_err:
-                            results_data.append({
-                                "Feature": col,
-                                "Current": f"{orig_val:.4f}",
-                                "Recommended": f"{new_val:.4f}",
-                                "Suggestion": "Change"
-                            })
-                    
-                    # Handle other numeric features
-                    else:
-                        try:
-                            # Special handling for Job column
-                            if col == "Job":
+                for col in features_to_vary:
+                    if col in original_vals.index:
+                        orig_val = original_vals[col]
+                        new_val = cf_df.iloc[0][col]
+                        
+                        # Skip if values are essentially the same
+                        if abs(float(orig_val) - float(new_val)) < 0.0001:
+                            continue
+                        
+                        changes_found = True
+                        
+                        # Handle continuous scaled features (need inverse scaling)
+                        if col in continuous_scale_features:
+                            try:
+                                dummy_scaled = np.zeros((1, len(continuous_scale_features)))
+                                col_idx = continuous_scale_features.index(col)
+                                
+                                dummy_scaled[0, col_idx] = orig_val
+                                orig_unscaled = scaler.inverse_transform(dummy_scaled)[0, col_idx]
+                                
+                                dummy_scaled[0, col_idx] = new_val
+                                new_unscaled = scaler.inverse_transform(dummy_scaled)[0, col_idx]
+                                
+                                direction = "Decrease" if new_unscaled < orig_unscaled else "Increase"
+                                results_data.append({
+                                    "Feature": col,
+                                    "Current": f"{orig_unscaled:.2f}",
+                                    "Recommended": f"{new_unscaled:.2f}",
+                                    "Suggestion": direction
+                                })
+                            except Exception as e:
+                                results_data.append({
+                                    "Feature": col,
+                                    "Current": f"{orig_val:.4f}",
+                                    "Recommended": f"{new_val:.4f}",
+                                    "Suggestion": "Change"
+                                })
+                        
+                        # Handle categorical encoded features (decode back to original class names)
+                        elif col in label_encoders:
+                            try:
                                 orig_class_idx = int(round(float(orig_val)))
                                 new_class_idx = int(round(float(new_val)))
                                 
-                                orig_class_name = job_mapping.get(orig_class_idx, str(orig_class_idx))
-                                new_class_name = job_mapping.get(new_class_idx, str(new_class_idx))
+                                # Special handling for Job column
+                                if col == "Job":
+                                    orig_class_name = job_mapping.get(orig_class_idx, str(orig_class_idx))
+                                    new_class_name = job_mapping.get(new_class_idx, str(new_class_idx))
+                                else:
+                                    orig_class_name = label_encoders[col].inverse_transform([orig_class_idx])[0]
+                                    new_class_name = label_encoders[col].inverse_transform([new_class_idx])[0]
+                                
+                                # Replace 'nan' with user-friendly label
+                                if str(orig_class_name) == 'nan':
+                                    orig_class_name = 'rather not to say / no account'
+                                if str(new_class_name) == 'nan':
+                                    new_class_name = 'rather not to say / no account'
                                 
                                 results_data.append({
                                     "Feature": col,
@@ -381,51 +568,76 @@ else:
                                     "Recommended": str(new_class_name),
                                     "Suggestion": "Change"
                                 })
-                            else:
-                                diff = float(new_val) - float(orig_val)
-                                direction = "Decrease" if diff < 0 else "Increase"
+                            except Exception as decode_err:
                                 results_data.append({
                                     "Feature": col,
-                                    "Current": f"{float(orig_val):.4f}",
-                                    "Recommended": f"{float(new_val):.4f}",
-                                    "Suggestion": direction
+                                    "Current": f"{orig_val:.4f}",
+                                    "Recommended": f"{new_val:.4f}",
+                                    "Suggestion": "Change"
                                 })
-                        except:
-                            results_data.append({
-                                "Feature": col,
-                                "Current": str(orig_val),
-                                "Recommended": str(new_val),
-                                "Suggestion": "Change"
-                            })
+                        
+                        # Handle other numeric features
+                        else:
+                            try:
+                                # Special handling for Job column
+                                if col == "Job":
+                                    orig_class_idx = int(round(float(orig_val)))
+                                    new_class_idx = int(round(float(new_val)))
+                                    
+                                    orig_class_name = job_mapping.get(orig_class_idx, str(orig_class_idx))
+                                    new_class_name = job_mapping.get(new_class_idx, str(new_class_idx))
+                                    
+                                    results_data.append({
+                                        "Feature": col,
+                                        "Current": str(orig_class_name),
+                                        "Recommended": str(new_class_name),
+                                        "Suggestion": "Change"
+                                    })
+                                else:
+                                    diff = float(new_val) - float(orig_val)
+                                    direction = "Decrease" if diff < 0 else "Increase"
+                                    results_data.append({
+                                        "Feature": col,
+                                        "Current": f"{float(orig_val):.4f}",
+                                        "Recommended": f"{float(new_val):.4f}",
+                                        "Suggestion": direction
+                                    })
+                            except:
+                                results_data.append({
+                                    "Feature": col,
+                                    "Current": str(orig_val),
+                                    "Recommended": str(new_val),
+                                    "Suggestion": "Change"
+                                })
 
-            if changes_found:
-                st.success("Recommendations to Improve Credit Assessment")
-                
-                # Generate explanation sentence
-                change_parts = []
-                for item in results_data:
-                    change_parts.append(f"**{item['Feature']}** from *{item['Current']}* to *{item['Recommended']}*")
-                
-                if len(change_parts) == 1:
-                    explanation = f"If you change {change_parts[0]}, then the assessment will change to **Low Risk**."
-                elif len(change_parts) == 2:
-                    explanation = f"If you change {change_parts[0]} and {change_parts[1]}, then the assessment will change to **Low Risk**."
+                if changes_found:
+                    st.success("Recommendations to Improve Credit Assessment")
+                    
+                    # Generate explanation sentence
+                    change_parts = []
+                    for item in results_data:
+                        change_parts.append(f"**{item['Feature']}** from *{item['Current']}* to *{item['Recommended']}*")
+                    
+                    if len(change_parts) == 1:
+                        explanation = f"If you change {change_parts[0]}, then the assessment will change to **Low Risk**."
+                    elif len(change_parts) == 2:
+                        explanation = f"If you change {change_parts[0]} and {change_parts[1]}, then the assessment will change to **Low Risk**."
+                    else:
+                        explanation = f"If you change {', '.join(change_parts[:-1])}, and {change_parts[-1]}, then the assessment will change to **Low Risk**."
+                    
+                    st.info(explanation)
+                    st.dataframe(pd.DataFrame(results_data), width='stretch')
+                    st.markdown("""
+                    **Explanation:**
+                    - **Current**: Your current value
+                    - **Recommended**: Suggested value
+                    - **Suggestion**: Direction of adjustment (Increase or Decrease)
+                    - **Age and Sex**: Remain unchanged (immutable features)
+                    - **Other Features**: Can be adjusted according to recommendations to improve credit score
+                    """)
                 else:
-                    explanation = f"If you change {', '.join(change_parts[:-1])}, and {change_parts[-1]}, then the assessment will change to **Low Risk**."
-                
-                st.info(explanation)
-                st.dataframe(pd.DataFrame(results_data), width='stretch')
-                st.markdown("""
-                **Explanation:**
-                - **Current**: Your current value
-                - **Recommended**: Suggested value
-                - **Suggestion**: Direction of adjustment (Increase or Decrease)
-                - **Age and Sex**: Remain unchanged (immutable features)
-                - **Other Features**: Can be adjusted according to recommendations to improve credit score
-                """)
-            else:
-                st.info("No adjustments found to improve the assessment with current constraints.")
+                    st.info("No adjustments found to improve the assessment with current constraints.")
 
-        except Exception as e:
-            st.error("Could not generate counterfactuals.")
-            st.warning(f"Technical Detail: {str(e)}")
+            except Exception as e:
+                st.error("Could not generate counterfactuals.")
+                st.warning(f"Technical Detail: {str(e)}")
